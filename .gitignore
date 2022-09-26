@@ -1,0 +1,15 @@
+*.class
+target/
+data/
+*.war
+*.iml
+*.ear
+.idea/
+.idea_modules
+*DS_Store
+.classpath
+.project
+.settings/
+node_modules
+/sds-hive-rest/dependency-reduced-pom.xml
+*.sqlite

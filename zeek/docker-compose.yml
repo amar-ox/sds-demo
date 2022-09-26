@@ -1,0 +1,36 @@
+version: '3.2'
+services:
+  zeek-container:
+    image: amaroxmo/sds:zeek-container
+    cap_add:
+      - net_raw
+      - net_admin
+    network_mode: host
+    volumes:
+      - type: bind
+        source: ./zeek/etc
+        target: /usr/local/zeek/etc
+      - type: bind
+        source: ./zeek-data/zeek-container-db
+        target: /var/db
+    healthcheck:
+      test: exit 0
+
+  zeek-agent:
+    image: amaroxmo/sds:zeek-agent
+    volumes:
+      - type: bind
+        source: ./zeek-data/zeek-container-db
+        target: /var/db
+    ports:
+      - '8002:8002' # expose ports - HOST:CONTAINER
+    depends_on:
+      - zeek-container
+    #links:
+    #  - zeek-container
+    networks:
+      - sds-network
+
+networks:
+  sds-network:
+    external: true

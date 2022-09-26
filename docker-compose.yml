@@ -1,0 +1,178 @@
+version: '3.7'
+services:
+
+  ##### Kafka infrastructure #####
+  zookeeper-ingester:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+  kafka-ingester:
+    image: wurstmeister/kafka
+    ports:
+      - "9093:9093"
+    environment:
+      KAFKA_LISTENERS: INTERNAL://:9092, EXTERNAL://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-ingester:9092, EXTERNAL://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT, EXTERNAL:PLAINTEXT
+      KAFKA_CREATE_TOPICS: "topic-ingester:1:1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-ingester:2181
+    volumes:
+      - zookeeper-ingester-data:/var/run/docker.sock  
+  zookeeper-distributor:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2182:2181"
+  kafka-distributor:
+    image: wurstmeister/kafka
+    ports:
+      - "9095:9093"
+    environment:
+      KAFKA_LISTENERS: INTERNAL://:9092, EXTERNAL://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-distributor:9092, EXTERNAL://localhost:9095
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT, EXTERNAL:PLAINTEXT
+      KAFKA_CREATE_TOPICS: "topic-distributor:1:1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-distributor:2181
+    volumes:
+      - zookeeper-distributor-data:/var/run/docker.sock
+
+
+  ##### SDS ingesters #####
+  sds-ingester-rest:
+    image: amaroxmo/sds:ingester-rest 
+    hostname: sds-ingester-rest
+    ports:
+      - "8080:8080"
+  sds-ingester-syslog:
+    image: amaroxmo/sds:ingester-syslog
+    ports:
+      - "9898:9898"
+
+
+  #####  SDS distributor #####
+  sds-distributor:
+     image: amaroxmo/sds:distributor
+     depends_on:
+      - "kafka-ingester"
+      - "kafka-distributor"
+
+
+  ##### SDS writer to DB and Hadoop #####
+  kafka-hdfs:
+    image: amaroxmo/sds:consumer-hdfs-db   
+    ports:
+      - "49160:8080"
+    depends_on: 
+      - "hdfs"
+      - "kafka-distributor"
+      - "monitoring-db"
+
+
+  ##### HDFS #####
+  hdfs:
+    image: cloudera/quickstart:latest
+    privileged: true
+    hostname: quickstart.cloudera
+    command: /usr/bin/docker-quickstart 
+    tty: true
+    stdin_open: true        
+    ports:
+      - '8888:8888'
+      - '10000:10000'
+      - '10020:10020'
+      - '11000:11000'
+      - '18080:18080'
+      - '18081:18081'
+      - '18088:18088'
+      - '19888:19888'
+      - '21000:21000'
+      - '21050:21050'
+      - '25000:25000'
+      - '25010:25010'
+      - '25020:25020'
+      - '50010:50010'
+      - '50030:50030'
+      - '5060:50060'
+      - '5070:50070'
+      - '5075:50075'
+      - '5090:50090'
+      - '6000:60000'
+      - '6010:60010'
+      - '6020:60020'
+      - '6030:60030'
+      - '7180:7180'
+      - '7183:7183'
+      - '7187:7187'
+      - '80:80'
+      - '8020:8020'
+      - '8032:8032'
+      - '8042:8042'
+      - '8088:8088'
+      - '8983:8983'
+      - '9083:9083'
+    volumes:
+      - hdfs-parquet-data:/tmp/parquets
+
+
+  ##### PostgreSQL DB #####
+  monitoring-db:
+    image: amaroxmo/sds:monitoring-db
+    hostname: db-server
+    env_file:
+      - database.env
+    ports:
+      - 15432:5432
+    volumes:
+      - monitoring-db-data:/var/lib/postgresql/data/
+
+
+  ##### OSQuery #####
+  osquery-container:
+    image: amaroxmo/sds:osquery-container
+    env_file:
+      - database.env
+  osquery-agent:
+    image: amaroxmo/sds:osquery-agent
+    hostname: sds-server   
+    ports:
+      - "48080:8080"  
+      - "48443:8443"
+
+
+  ###### Zeek #####   /home/abdella/sds-demo/sds/zeek/etc
+  zeek-container:
+    image: amaroxmo/sds:zeek-container
+    cap_add:
+      - net_raw
+      - net_admin
+    network_mode: host
+    volumes:
+      - type: bind
+        source: ./zeek/zeek/etc
+        target: /usr/local/zeek/etc
+      - type: bind
+        source: ./zeek/zeek-data/zeek-container-db
+        target: /var/db
+    healthcheck:
+      test: exit 0
+  zeek-agent:
+    image: amaroxmo/sds:zeek-agent
+    volumes:
+      - type: bind
+        source: ./zeek/zeek-data/zeek-container-db
+        target: /var/db
+    ports:
+      - '8002:8002'
+    depends_on:
+      - zeek-container
+
+networks:
+  default:
+    name: sds-network
+  
+volumes:
+  monitoring-db-data:
+  zookeeper-ingester-data:
+  zookeeper-distributor-data:
+  hdfs-parquet-data:
